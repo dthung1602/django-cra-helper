@@ -10,13 +10,13 @@ def is_server_live(server_path: str) -> bool:
         try:
             resp = request.urlopen(server_path)
             if resp.status == 200:
-                logging.info('CRA liveserver is running')
+                logging.info(f'CRA live server running at {server_path}')
                 return True
             else:
-                logging.warning('CRA liveserver is up but not serving bundle.js')
+                logging.warning(f'CRA live server is up but not serving at {server_path}')
                 return False
-        except url_error.URLError as err:
-            logging.warning('CRA liveserver is not running')
+        except url_error.URLError as e:
+            logging.warning(f'CRA live server is not running {server_path}')
             return False
     else:
         return False

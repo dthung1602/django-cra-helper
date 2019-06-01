@@ -1,34 +1,63 @@
 import os
+import re
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 
 from cra_helper.server_check import is_server_live
-from cra_helper.asset_manifest import generate_manifest
 
-# Variables to help the template determine if it should try loading assets from the CRA live server
-_CRA_DEFAULT_PORT = 3000
-_port = _CRA_DEFAULT_PORT
+if not hasattr(settings, 'CRA_APPS'):
+    raise ImproperlyConfigured('Missing CRA_APPS in setting.py')
 
-# Allow the user to specify the port create-react-app is running on
-if hasattr(settings, 'CRA_PORT') and type(settings.CRA_PORT) is int:
-    _port = settings.CRA_PORT
+CRA_APPS = settings.CRA_APPS
 
-# The URL the create-react-app liveserver is accessible at
-CRA_URL = 'http://localhost:{}'.format(_port)
-
-if hasattr(settings, 'CRA_APP_NAME'):
-    CRA_APP_NAME = settings.CRA_APP_NAME
-else:
-    CRA_APP_NAME = 'react'
-
-# The ability to access this file means the create-react-app liveserver is running
-CRA_BUNDLE_PATH = '{}/static/js/bundle.js'.format(CRA_URL)
-
-# Check if Create-React-App live server is up and running
-CRA_LIVE = is_server_live(CRA_BUNDLE_PATH)
+CRA_APPS_NAME = list(CRA_APPS.keys())
 
 # The path to the CRA project directory, relative to the Django project's base directory
-CRA_FS_APP_DIR = os.path.join(settings.BASE_DIR, CRA_APP_NAME)
+CRA_FS_APP_DIRS = {app_name: os.path.join(settings.BASE_DIR, app_name) for app_name in CRA_APPS_NAME}
 
-# A list of entries in CRA's build bundle's
-STATIC_ASSET_MANIFEST = generate_manifest(CRA_LIVE, CRA_BUNDLE_PATH, CRA_FS_APP_DIR)
+# add react build directories to staticfiles dirs
+static_dirs = [os.path.join(d, 'build', 'static') for d in CRA_FS_APP_DIRS]
+settings.STATICFILES_DIRS += static_dirs
+
+CRA_LIVES = {app_name: False for app_name in CRA_APPS}
+CRA_URLS = []
+CRA_BUNDLE_PATHS = []
+PATH_RE_TO_CRA_URL = []
+
+if settings.DEBUG:
+
+    # check if all app has path
+    if not all(['path' in app_config for app_config in CRA_APPS.values()]):
+        raise ImproperlyConfigured('Missing path config')
+    
+    # check if all app has port
+    if not all(['port' in app_config for app_config in CRA_APPS.values()]):
+        raise ImproperlyConfigured('Missing port config')
+
+    # check for duplicate path
+    used_paths = [config['path'] for config in CRA_APPS.values()]
+    if len(used_paths) != len(set(used_paths)):
+        raise ImproperlyConfigured('Duplicated path of react app')
+
+    # check for duplicate app port
+    used_ports = [config['port'] for config in CRA_APPS.values()]
+    if len(used_ports) != len(set(used_ports)):
+        raise ImproperlyConfigured('Duplicated port of react app')
+
+    # compile path regex
+    for config in CRA_APPS.values():
+        if isinstance(config['path'], str):
+            config['path_re'] = re.compile(config['path'])
+
+    # The URL the create-react-app live server is accessible at
+    CRA_URLS = {app_name: f'http://localhost:{config["port"]}' for app_name, config in CRA_APPS.items()}
+
+    # The ability to access this file means the create-react-app live server is running
+    CRA_BUNDLE_PATHS = {app_name: f'{url}/static/js/bundle.js' for app_name, url in CRA_URLS.items()}
+
+    # Check if Create-React-App live server is up and running
+    CRA_LIVES = {app_name: is_server_live(path) for app_name, path in CRA_BUNDLE_PATHS.items()}
+
+    # A mapping from path to cra_url
+    PATH_RE_TO_CRA_URL = {config['path_re']: CRA_URLS[app_name] for app_name, config in CRA_APPS.items()}
