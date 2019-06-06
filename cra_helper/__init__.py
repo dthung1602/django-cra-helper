@@ -6,6 +6,11 @@ from django.core.exceptions import ImproperlyConfigured
 
 from cra_helper.server_check import is_server_live
 
+if not hasattr(settings, 'CRA_AUTO_RELOAD'):
+    CRA_AUTO_RELOAD = True
+else:
+    CRA_AUTO_RELOAD = settings.CRA_AUTO_RELOAD
+
 if not hasattr(settings, 'CRA_APPS'):
     raise ImproperlyConfigured('Missing CRA_APPS in setting.py')
 
@@ -30,7 +35,7 @@ if settings.DEBUG:
     # check if all app has path
     if not all(['path' in app_config for app_config in CRA_APPS.values()]):
         raise ImproperlyConfigured('Missing path config')
-    
+
     # check if all app has port
     if not all(['port' in app_config for app_config in CRA_APPS.values()]):
         raise ImproperlyConfigured('Missing port config')

@@ -7,7 +7,7 @@ from django.contrib.staticfiles.handlers import StaticFilesHandler
 from django.core.handlers.exception import response_for_exception
 from django.shortcuts import redirect
 
-from cra_helper import PATH_RE_TO_CRA_URL
+from cra_helper import PATH_RE_TO_CRA_URL, CRA_AUTO_RELOAD
 
 logger = logging.getLogger(__name__)
 main_hot_update_regex = re.compile(r'^/main\.[a-f0-9]+\.hot-update\.js$')
@@ -36,7 +36,7 @@ class CRAStaticFilesHandler(StaticFilesHandler):
             except Http404 as e:
                 cra_url = self.get_request_url(req)
 
-                # if not debugging -> return error as usual
+                # if not debugging or auto reload is disable -> return error as usual
                 # if debugging and cannot find cra_url -> return error
                 if not settings.DEBUG or not cra_url:
                     return response_for_exception(req, e)
@@ -49,6 +49,7 @@ class CRAStaticFilesHandler(StaticFilesHandler):
     @staticmethod
     def should_forward_cra(path):
         return settings.DEBUG and \
+               CRA_AUTO_RELOAD and \
                (path.startswith('/sockjs-node') or
                 path.startswith('/__webpack_dev_server__') or
                 main_hot_update_regex.match(path))

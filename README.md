@@ -2,15 +2,21 @@
 
 ## Introduction
 
-**django-cra-helper** is the missing link between **Django** and **create-react-app**. By adding this to your Django project, you can almost effortlessly inject your React components into your Django templates and initialize component props via Django context variables.
+**django-cra-helper** is the missing link between **Django** and **create-react-app**. By adding this to your Django 
+project, you can almost effortlessly inject your React components into your Django templates and initialize component
+props via Django context variables.
 
-The ultimate goal of this package is to integrate these two projects with minimal changes to workflows that are typically used with either during development. From `npm start` to `python manage.py collectstatic`, your commands should work as expected so you can forget about implementation and get back to development!
+The ultimate goal of this package is to integrate these two projects with minimal changes to workflows that are 
+typically used with either during development. From `npm start` to `python manage.py collectstatic`, your commands 
+should work as expected so you can forget about implementation and get back to development!
 
 > Note: For the purposes of this README, the abbreviation **CRA** will be used to refer to **create-react-app**.
 
 ## Installation
 
 This package is available for installation via `pip`:
+
+\>>>TODO
 
 ```sh
 pip install django-cra-helper
@@ -32,114 +38,120 @@ INSTALLED_APPS = [
 ]
 ```
 
-> Note: `cra_helper` **must** be placed above `django.contrib.staticfiles` in the list!
+> Note: Be careful of apps that require an overloaded or replacement runserver command. `cra_heldper` provides a 
+separate runserver command and may conflict with it. An example of such a conflict is with `django.contrib.staticfiles`.
+In order to solve such issues, try moving `cra_helper` above those apps or remove the offending app altogether.
 
-Add `cra_helper.context_processors.static` to `TEMPLATES['OPTIONS']['context_processors']`:
+Add `cra_helper.template_loader.ReactLoader` to `TEMPLATES['OPTIONS']['loaders']`:
 
 ```python
 TEMPLATES = [
     {
-        # ...snip...
+        # ...
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
+
         'OPTIONS': {
-            'context_processors': [
-                # ...snip...
-                'cra_helper.context_processors.static',
+            # ...             
+            'loaders': [
+                'django.template.loaders.filesystem.Loader',
+                'django.template.loaders.app_directories.Loader',
+                'cra_helper.template_loader.ReactLoader',
             ],
         },
     },
 ]
 ```
 
-Additionally, the following `STATICFILES_FINDERS` list will also need to be added to `settings.py`:
+> Note: when you use a custom template loader, you have to explicitly specify default ones: 
+`django.template.loaders.filesystem.Loader` and `django.template.loaders.app_directories.Loader`
+
+The last necessary settings is the CRA projects:
 
 ```python
-STATICFILES_FINDERS = [
-    # Django defaults
-    'django.contrib.staticfiles.finders.FileSystemFinder',
-    'django.contrib.staticfiles.finders.AppDirectoriesFinder',
-    # A finder to pull in asset-manifest.json
-    'cra_helper.finders.CRAManifestFinder',
-]
+CRA_APPS = {
+    'react_index': {
+        'port': 3000,
+        'path': '^/$'
+    },
+    'react_user': {
+        'port': 3001,
+        'path': '^/user/[0-9]+'
+    }
+}
 ```
 
-The last necessary setting is the name of the folder containing the CRA project files, relative to the base directory of the Django **project** (the folder containing `manage.py`):
+Here `react_index` and `react_user` are two React project folder, relative to the base directory of 
+the Django **project** (the folder containing `manage.py`)
 
-```python
-CRA_APP_NAME = 'cra-app'
+`port` specifies the port of the live server of that React app and `path` is the regular expression represents the path 
+that your django backend will serve this React app.    
+
+> Note: `port` and `path` are only required for development server and are ignored when `DEBUG == False`
+
+## Usage
+
+Consider a project with following (simplified) structure:
+```text
+ProjectRoot
+    ├── manage.py
+    │
+    ├── Project
+    │   ├── settings.py
+    │   └── urls.py
+    │
+    ├── django_backend
+    │   └── views.py
+    │
+    ├── templates
+    │   └── base.html
+    |
+    ├── react_index
+    │   ├── public
+    │   │    ├── index.html
+    │   └── src
+    │        ├── index.js
+    │        └── App.js
+    |
+    └── react_user
+        ├── public
+        │    ├── index.html
+        └── src
+             ├── index.js
+             └── App.js 
 ```
 
-If for some reason the CRA liveserver does *not* serve on port 3000, the following setting can be added to `settings.py` to specify its actual port:
+### React app re-architecture
 
-```python
-CRA_PORT = 9999
-```
+The CRA project will need to undergo a small bit of re-architecture to prepare it to accept input values from Django when
+Django serves a view. The following is an example of how a couple of small tweaks to a `react_index/src/index.js` file
+will establish a simple API for Django to communicate with the bundled React codebase:
 
-> Note: if you don't set a value for `CRA_PORT` then **django-cra-helper** will default to port `3000`.
-
-Finally, run CRA's `npm run build` command once to generate a `build/` directory. **django-cra-helper** requires the `build/asset-manifest.json` file contained within to help load non-JS and non-CSS assets that might be used in any React components. This command should be re-run any time a new non-JS or non-CSS asset is added to the project.
-
-Once everything is in place, **django-cra-helper** will make the following possible:
-
-### Access React components in real-time from the CRA liveserver
-
-If the CRA project's liveserver is started via `npm start` prior to starting Django's development server via `python manage.py runserver`, code changes in the React codebase will be updated immediately within Django views as well.
-
-When the CRA liveserver is running, **django-cra-helper** adds a `bundle_js` template variable that can be inserted into the Django view's template to load the liveserver's intermediate `bundle.js` file containing all of the current JS and CSS. This file is recompiled on-the-fly by the liveserver whenever edits are made to the React code. This file can be added to a Django template as follows:
-
-```html
-{% if bundle_js %}<script type="text/javascript" src="{{ bundle_js }}"></script>{% endif %}
-```
-> Note: Don't use the `static` template tag here! This file needs to be loaded from the CRA liveserver instead.
-
-### Access React components in production
-
-**django-cra-helper** also takes care of ensuring that Django's `collectstatic` command pulls in production-ready bundles built by CRA's `npm run build` command.
-
-First, prepare React files for production with the typical CRA `npm` build command:
-
-```sh
-npm run build
-```
-
-This will output bundled, minified JavaScript and CSS, and assets to the `/build/` folder within the CRA project folder.
-
-Once this command is complete, run the following Django command to gather static files, including the compiled React assets:
-
-```sh
-python manage.py collectstatic --no-input
-```
-
-React assets will be included with the other static assets in the `settings.STATIC_ROOT` directory, to be served as is usual in a Django production environment. An `asset-manifest.json` file will also get pulled in. The contents of this CRA-generated file are required by **django-cra-helper** to help reference React files that have had a unique hash added to their filenames during the build process.
-
-Similar to the `bundle_js` template variable mentioned earlier, **django-cra-helper** includes numerous other template variables when the CRA liveserver is _not_ running. The two most important ones are `main_js` and `main_css`. These can be injected into the page via a typical call to `{% static %}` in the template:
-
-```html
-{% if main_css %}<link href="{% static main_css %}" rel="stylesheet">{% endif %}
-```
-```html
-{% if main_js %}<script type="text/javascript" src="{% static main_js %}"></script>{% endif %}
-
-```
-
-Other assets bundled by CRA, including image assets, can be accessed in templates by substituting `_` for `/` and `.` (period). **django-cra-helper** adds every entry in `asset-manifest.json` to the base context, using these substitution rules to accomodate Django's `static` tag.
-
-For example,  a **logo.svg** file in the CRA project can be included in a Django template as follows:
-
-```html
-<!-- This file is located at `/build/static/media/logo.svg` -->
-<img src="{% static static_media_logo_svg %}" height="40" width="40">
-```
-> Note: This is optional! Static assets can still be included in the Django app's `/static/` directory and loaded as usual. The special substitution mentioned above is only needed when reusing React assets outside of specific components.
-
-## Accessing React Components via Django template contexts
-
-The CRA project will need to undergo a small bit of re-archiceture to prepare it to accept input values from Django when Django serves a view. The following is an example of how a couple of small tweaks to a CRA project's `src/index.js` file will establish a simple API for Django to communicate with the bundled React codebase:
-
-```js
+```jsx harmony
 import React from 'react';
 import ReactDOM from 'react-dom';
-import App from './App';
 import './index.css';
+import './App.css';
+
+function App(props) {
+    return (
+        <div className="App">
+            <header className="App-header">
+                <img src={logo} className="App-logo" alt="logo"/>
+                <p>
+                    Edit <code>src/App.js</code> and save to reload.
+                </p>
+                <a
+                    className="App-link"
+                    href="https://reactjs.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    HELLO {props.env}
+                </a>
+            </header>
+        </div>
+    );
+}
 
 /**
  * Maintain a simple map of React components to make it easier
@@ -167,44 +179,24 @@ ReactDOM.render(
 );
 ```
 
-Basically, `index.js` is updated to read values set to `window.component`, `window.props`, and `window.reactRoot` and use these to render a component. Each of these three "inputs" will allow Django to easily specify which component to initialize on a per-view basis:
+Basically, `index.js` is updated to read values set to `window.component`, `window.props`, and `window.reactRoot` and 
+use these to render a component. Each of these three "inputs" will allow Django to easily specify which component to 
+initialize on a per-view basis:
 
 * `window.component`: A **string** that points to a Component entry in `pages`
 * `window.props`: An **Object** containing props to get passed into the Component
 * `window.reactRoot`: an **instance** of `document.getElementById`
 
-> Note: Settings these values is optional. The defaults specified in the template above enable components to render as expected when viewed from the CRA liveserver.
+> Note: Settings these values is optional. The defaults specified in the template above enable components to render as 
+expected when viewed from the CRA liveserver.
 
-Now that the "API" is in place, Django Views can include values for these inputs via the context they pass to their template:
+Below is `react_user/public/index.html` that will render the context:
 
-```python
-def index(request):
-    context = {
-        'component': 'App',
-        'props': {
-            'env': 'Django',
-        },
-    }
-    return render(request, 'index.html', context)
-```
+```djangotemplate
+{% extends "base.html" %}
 
-Below is the Django app's `index.html` template that will render the context:
+{% block script %}
 
-```html
-{% load static %}
-{% load cra_helper_tags %}
-<!DOCTYPE html>
-<html lang="en">
-
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    {% if main_css %}<link href="{% static main_css %}" rel="stylesheet">{% endif %}
-    <title>Django + React Project</title>
-  </head>
-
-  <body>
     <div id="react">Loading...</div>
 
     <script>
@@ -212,28 +204,109 @@ Below is the Django app's `index.html` template that will render the context:
       window.props = {{ props | json }};
       window.reactRoot = document.getElementById('react');
     </script>
-    {% if bundle_js %}<script type="text/javascript" src="{{ bundle_js }}"></script>{% endif %}
-    {% if main_js %}<script type="text/javascript" src="{% static main_js %}"></script>{% endif %}
-  </body>
-
-</html>
+    
+{% endblock %}
 ```
+
+And `base.html` that it extends:
+
+```djangotemplate
+<!DOCTYPE html>
+
+<head>
+    <title>{{ title }}</title>
+</head>
+
+<body>
+
+    <h2>THIS LINE IS FROM BASE TEMPLATE</h2>
+    
+    {% block body %}
+    {% endblock %}
+    
+</body>
+```
+
 The context's `component` and `props` are bound to `window.component` and `window.props` respectively.
 
-Note the use of the `json` filter when setting `windows.props`! `{% load cra_helper_tags %}` provides this filter as a way to easily sanitize and convert a Python `dict` to a Javascript `Object`. The View context prepared above thus renders to the following typical Javascript Object:
+Note the use of the `json` filter when setting `windows.props`! `{% load cra_helper_tags %}` provides this filter as a 
+way to easily sanitize and convert a Python `dict` to a Javascript `Object`. The View context prepared above thus 
+renders to the following typical Javascript Object:
 
 ```js
 // This is what is returned in the rendered HTML
 window.props = {"env": "Django"};
 ```
-Finally, `window.reactRoot` specifies the container element that the React component should be rendered into. Setting a value for this is only required if the container's `id` is *not* **"root"** (the same ID assigned to the container `<div>` in the CRA project's `index.html`.)
+Finally, `window.reactRoot` specifies the container element that the React component should be rendered into. Setting a
+value for this is only required if the container's `id` is *not* **"root"** (the same ID assigned to the container
+`<div>` in the CRA project's `index.html`.)
 
-## The Payoff Revealed
+> Note: you do not need to worry about JavaScript and CSS in React template. These will be injected automatically by 
+`django-cra-helper`
 
-When all is said and done, React components should now render and be viewable in both the CRA liveserver and when served via Django. Here's an example of a slightly-modified CRA `App` component displayed in Django (left) and CRA (right):
+### Using the template
 
-![Comparison Shot](./side_by_side.png)
+To access `index.html` in a React app, use the template `<react-app-name>.html`:
 
-## TODO
+```python
+from django.shortcuts import render
 
-* Figure out how to get Django to auto-reload when the CRA liveserver reloads after code is updated.
+# this function is registered to serve /
+def index(request):
+    context = {
+        'component': 'App',
+        'props': {
+            'env': 'Django Index',
+        },
+        'title': 'Index page'
+    }
+    return render(request, 'react_index.html', context)
+
+# this function is register to serve /user/<some number>
+def user(request):
+    context = {
+        'component': 'App',
+        'props': {
+            'env': 'Django User'
+        },
+        'title': 'User'
+    }
+    return render(request, 'react_user.html', context)
+
+```
+
+#### Debug mode 
+
+When the Django serer is started with `python mangage.py runserer` and `DEBUG == True`, it will check whether the React 
+apps specified in `CRA_APPS` are running.
+
+If it is, `django-cra-helper` will fetch html, js and css from that. Code changes in the React codebase will be updated 
+immediately within Django views as well. 
+
+> Note: the React apps live servers are independent of each other. You can let some live servers run while others do not.
+In the later case, `django-cra-helper` falls to production mode on those apps.
+
+Unlike version 1, there's no need to reload the page to see changes. But to enable this features, 3 paths are reserved
+for this purpose: `/sockjs-node/*`, `/__webpack_dev_server__/*` and `/main.<hex-number>.hot-update.js`. If you happens
+to use these paths, you can disable auto loading by setting `CRA_AUTO_RELOAD = False` in `settings.py`
+
+#### Production mode
+
+In production mode, `cra_helper.template_loader.ReactLoader` loads template from react app's `build/index.html`.
+
+Hence, we need to run `npm run build` on react apps beforehand. Also, some small changes to `index.html` needs to be made
+after building to make template inheritance works. 
+
+`django-cra-helper` provides `buildreact` command to do just that.
+
+```bash
+python mangage.py buildreact
+``` 
+
+You can specify the apps to build. If none is provided, `buildreact` assumes that you want all of them.
+
+```bash
+python mangage.py buildreact react_index 
+``` 
+
+If `--collectstatic` is set, `collectstatic` command will be run after building.
